@@ -40,6 +40,7 @@ $serverCode = <<<'CODE'
     phpt_notify_server_start($fp);
 
     $conn = stream_socket_accept($fp);
+    sleep(2);
     fwrite($conn, 'warmup');
 
     phpt_wait();
@@ -60,7 +61,18 @@ $proxyCode = <<<'CODE'
     $read = [$upstream, $conn];
     $applicationData = false;
     $upstreamBuffer = '';
-    while (stream_select($read, $write, $except, 1)) {
+    while (true) {
+        $selected = stream_select($read, $write, $except, 1);
+        if ($selected === false) {
+            throw new RuntimeException('Failed to select TLS proxy streams');
+        }
+        if ($selected === 0) {
+            if (feof($upstream) || feof($conn)) {
+                break;
+            }
+            $read = [$upstream, $conn];
+            continue;
+        }
         foreach ($read as $fp) {
             $data = stream_get_contents($fp);
             if ($fp === $conn) {
@@ -84,7 +96,7 @@ $proxyCode = <<<'CODE'
                 }
             }
         }
-        if (feof($upstream)) {
+        if (feof($upstream) || feof($conn)) {
             break;
         }
         $read = [$upstream, $conn];

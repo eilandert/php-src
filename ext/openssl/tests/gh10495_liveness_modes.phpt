@@ -47,6 +47,11 @@ $clientCode = <<<'CODE'
     stream_set_blocking($fp, true);
     phpt_notify('server');
     phpt_wait('proxy');
+    $read = [$fp];
+    $write = $except = null;
+    if (stream_select($read, $write, $except, 1) === false) {
+        throw new RuntimeException('Failed to wait for the closed TLS peer');
+    }
     var_dump(feof($fp));
     var_dump(stream_get_meta_data($fp)['blocked']);
 CODE;
@@ -59,8 +64,10 @@ $serverCode = <<<'CODE'
     phpt_notify_server_start($server);
 
     $conn = stream_socket_accept($server);
+    sleep(2);
     fwrite($conn, 'first');
     phpt_wait();
+    sleep(2);
     fwrite($conn, 'second');
     phpt_wait();
     fclose($conn);
@@ -80,7 +87,23 @@ $proxyCode = <<<'CODE'
     $applicationRecords = 0;
     $upstreamBuffer = '';
     $read = [$upstream, $conn];
-    while (stream_select($read, $write, $except, 1)) {
+    while (true) {
+        $selected = stream_select($read, $write, $except, 1);
+        if ($selected === false) {
+            throw new RuntimeException('Failed to select TLS proxy streams');
+        }
+        if ($selected === 0) {
+            if (feof($upstream)) {
+                fclose($conn);
+                phpt_notify();
+                break;
+            }
+            if (feof($conn)) {
+                throw new RuntimeException('TLS proxy client closed unexpectedly');
+            }
+            $read = [$upstream, $conn];
+            continue;
+        }
         foreach ($read as $fp) {
             $data = stream_get_contents($fp);
             if ($fp === $conn) {
@@ -104,6 +127,9 @@ $proxyCode = <<<'CODE'
             fclose($conn);
             phpt_notify();
             break;
+        }
+        if (feof($conn)) {
+            throw new RuntimeException('TLS proxy client closed unexpectedly');
         }
         $read = [$upstream, $conn];
     }
