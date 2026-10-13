@@ -28,7 +28,7 @@ CODE;
 $clientCode = sprintf($clientCode, $peerName);
 
 $serverCode = <<<'CODE'
-    $context = stream_context_create(['ssl' => ['local_cert' => '%s']]);
+    $context = stream_context_create(['ssl' => ['local_cert' => %s]]);
     $flags = STREAM_SERVER_BIND | STREAM_SERVER_LISTEN;
     $server = stream_socket_server("tlsv1.2://127.0.0.1:0", $errornum, $errorstr, $flags, $context);
     phpt_notify_server_start($server);
@@ -38,7 +38,7 @@ $serverCode = <<<'CODE'
     phpt_wait();
     fclose($conn);
 CODE;
-$serverCode = sprintf($serverCode, $certFile);
+$serverCode = sprintf($serverCode, var_export($certFile, true));
 
 $proxyCode = <<<'CODE'
     $upstream = stream_socket_client("tcp://{{ ADDR }}", $errornum, $errorstr, 1, STREAM_CLIENT_CONNECT);
